@@ -136,24 +136,18 @@ std::string metadata_to_pmtiles_json(metadata m) {
 	return compressed;
 }
 
-void mbtiles_map_image_to_pmtiles(char *fname, metadata m, bool tile_compression, bool fquiet, bool fquiet_progress) {
-	sqlite3 *db;
-
-	if (sqlite3_open(fname, &db) != SQLITE_OK) {
-		fprintf(stderr, "%s: %s\n", fname, sqlite3_errmsg(db));
-		exit(EXIT_SQLITE);
-	}
-
-	char *err = NULL;
-	if (sqlite3_exec(db, "PRAGMA integrity_check;", NULL, NULL, &err) != SQLITE_OK) {
-		fprintf(stderr, "%s: integrity_check: %s\n", fname, err);
-		exit(EXIT_SQLITE);
-	}
+void mbtiles_map_image_to_pmtiles(char *fname, metadata m, bool tile_compression, bool fquiet, bool fquiet_progress, sqlite3 *db) {
 
 	// materialize list of all tile IDs
 	std::vector<uint64_t> tile_ids;
 
 	{
+		char *err = NULL;
+		if (sqlite3_exec(db, "ANALYZE;", NULL, NULL, &err) != SQLITE_OK) {
+			fprintf(stderr, "mbtiles_map_image_to_pmtiles: ANALYZE failed: %s\n", err);
+			exit(EXIT_SQLITE);
+		}
+
 		const char *sql = "SELECT zoom_level, tile_column, tile_row FROM map";
 		sqlite3_stmt *stmt;
 

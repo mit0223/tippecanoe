@@ -26,7 +26,7 @@ size_t max_tilestats_attributes = 1000;
 size_t max_tilestats_sample_values = 1000;
 size_t max_tilestats_values = 100;
 
-sqlite3 *mbtiles_open(char *dbname, char **argv, int forcetable) {
+sqlite3 *mbtiles_open(const char *dbname, char **argv, int forcetable) {
 	sqlite3 *outdb;
 
 	if (sqlite3_open(dbname, &outdb) != SQLITE_OK) {

@@ -63,7 +63,7 @@ struct metadata {
 
 #include "tile.hpp"
 
-sqlite3 *mbtiles_open(char *dbname, char **argv, int forcetable);
+sqlite3 *mbtiles_open(const char *dbname, char **argv, int forcetable);
 
 void mbtiles_write_tile(sqlite3 *outdb, int z, int tx, int ty, const char *data, int size);
 void mbtiles_erase_zoom(sqlite3 *outdb, int z);

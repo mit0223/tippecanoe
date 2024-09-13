@@ -3805,15 +3805,17 @@ int main(int argc, char **argv) {
 	}
 
 	if (out_mbtiles != NULL) {
+		const char *temp_out_mbtiles = out_mbtiles;
 		if (force) {
 			unlink(out_mbtiles);
 		} else {
 			if (pmtiles_has_suffix(out_mbtiles)) {
 				check_pmtiles(out_mbtiles, argv, forcetable);
+				temp_out_mbtiles = ":memory:";
 			}
 		}
 
-		outdb = mbtiles_open(out_mbtiles, argv, forcetable);
+		outdb = mbtiles_open(temp_out_mbtiles, argv, forcetable);
 	}
 	if (out_dir != NULL) {
 		check_dir(out_dir, argv, force, forcetable);
@@ -3852,13 +3854,13 @@ int main(int argc, char **argv) {
 
 	ret = std::get<0>(input_ret);
 
-	if (outdb != NULL) {
+	if (pmtiles_has_suffix(out_mbtiles)) {
+		mbtiles_map_image_to_pmtiles(out_mbtiles, std::get<1>(input_ret), prevent[P_TILE_COMPRESSION] == 0, quiet, quiet_progress, outdb);
+	} else if (outdb != NULL) {
 		mbtiles_close(outdb, argv[0]);
 	}
 
-	if (pmtiles_has_suffix(out_mbtiles)) {
-		mbtiles_map_image_to_pmtiles(out_mbtiles, std::get<1>(input_ret), prevent[P_TILE_COMPRESSION] == 0, quiet, quiet_progress);
-	}
+
 
 #ifdef MTRACE
 	muntrace();
