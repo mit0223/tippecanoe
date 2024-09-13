@@ -1548,17 +1548,17 @@ int main(int argc, char **argv) {
 		dir_write_metadata(out_dir, m);
 	}
 
-	if (outdb != NULL) {
-		mbtiles_close(outdb, argv[0]);
-	}
-
 	if (filter != NULL) {
 		json_free(filter);
 	}
 
 	if (pmtiles_has_suffix(out_mbtiles)) {
-		mbtiles_map_image_to_pmtiles(out_mbtiles, m, !pC, quiet, false);
+		mbtiles_map_image_to_pmtiles(out_mbtiles, m, !pC, quiet, false, outdb);
+	} else if (outdb != NULL) {
+		mbtiles_close(outdb, argv[0]);
 	}
+
+
 
 	return 0;
 }
