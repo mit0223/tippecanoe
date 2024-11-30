@@ -97,7 +97,7 @@ indent:
 TESTS = $(wildcard tests/*/out/*.json)
 SPACE = $(NULL) $(NULL)
 
-test: tippecanoe tippecanoe-decode $(addsuffix .check,$(TESTS)) raw-tiles-test parallel-test pbf-test join-test enumerate-test decode-test join-filter-test unit json-tool-test allow-existing-test csv-test layer-json-test pmtiles-test decode-pmtiles-test overzoom-test
+test: tippecanoe tippecanoe-decode $(addsuffix .check,$(TESTS)) raw-tiles-test parallel-test pbf-test join-test enumerate-test decode-test join-filter-test unit json-tool-test allow-existing-test csv-test layer-json-test pmtiles-test pmtiles-in-memory-test decode-pmtiles-test overzoom-test
 	./unit
 
 suffixes = json json.gz
@@ -222,6 +222,27 @@ pmtiles-test: tippecanoe tippecanoe-decode tile-join
 	# Test that metadata.json is created even if all features are clipped away
 	./tippecanoe -q -f -o tests/raw-tiles/nothing.pmtiles tests/raw-tiles/nothing.geojson
 	./tippecanoe-decode -x generator tests/raw-tiles/nothing.pmtiles | sed 's/\.pmtiles//g' | sed 's/ -o / -e /g' > tests/raw-tiles/nothing.json.check
+	cmp tests/raw-tiles/nothing.json.check tests/raw-tiles/nothing.json
+	rm -r tests/raw-tiles/nothing.pmtiles tests/raw-tiles/nothing.json.check
+
+pmtiles-in-memory-test: tippecanoe tippecanoe-decode tile-join
+	./tippecanoe -q -f -i -o tests/pmtiles/hackspots.pmtiles -r1 -pC tests/raw-tiles/hackspots.geojson
+	./tippecanoe-decode -x generator tests/pmtiles/hackspots.pmtiles | sed 's/ -i -o / -o /g' > tests/pmtiles/hackspots.json.check
+	cmp tests/pmtiles/hackspots.json.check tests/pmtiles/hackspots.json
+	# Test generating pmtiles first and then converting to mbtiles with tile-join.
+	./tile-join -q -f -pC -o tests/pmtiles/joined.mbtiles tests/pmtiles/hackspots.pmtiles
+	./tippecanoe-decode -x generator tests/pmtiles/joined.mbtiles | sed 's/ -i -o / -o /g' > tests/pmtiles/joined.json.check
+	cmp tests/pmtiles/joined.json.check tests/pmtiles/joined.json
+	rm -r tests/pmtiles/hackspots.json.check tests/pmtiles/hackspots.pmtiles
+
+	# From raw-tiles-test:
+	./tippecanoe -q -f -i -o tests/raw-tiles/raw-tiles.pmtiles -r1 -pC tests/raw-tiles/hackspots.geojson
+	./tippecanoe-decode -x generator tests/raw-tiles/raw-tiles.pmtiles | sed 's/\.pmtiles//g' | sed 's/ -i -o / -e /g' > tests/raw-tiles/raw-tiles.json.check
+	cmp tests/raw-tiles/raw-tiles.json.check tests/raw-tiles/raw-tiles.json
+	rm -rf tests/raw-tiles/raw-tiles.pmtiles tests/raw-tiles/raw-tiles.json.check
+	# Test that metadata.json is created even if all features are clipped away
+	./tippecanoe -q -f -i -o tests/raw-tiles/nothing.pmtiles tests/raw-tiles/nothing.geojson
+	./tippecanoe-decode -x generator tests/raw-tiles/nothing.pmtiles | sed 's/\.pmtiles//g' | sed 's/ -i -o / -e /g' > tests/raw-tiles/nothing.json.check
 	cmp tests/raw-tiles/nothing.json.check tests/raw-tiles/nothing.json
 	rm -r tests/raw-tiles/nothing.pmtiles tests/raw-tiles/nothing.json.check
 

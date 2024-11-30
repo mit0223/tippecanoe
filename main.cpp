@@ -3002,6 +3002,7 @@ int main(int argc, char **argv) {
 	char *description = NULL;
 	char *layername = NULL;
 	char *out_mbtiles = NULL;
+	int in_memory = 0;
 	char *out_dir = NULL;
 	sqlite3 *outdb = NULL;
 	int maxzoom = 14;
@@ -3041,6 +3042,7 @@ int main(int argc, char **argv) {
 	static struct option long_options_orig[] = {
 		{"Output tileset", 0, 0, 0},
 		{"output", required_argument, 0, 'o'},
+		{"in-memory", no_argument, 0, 'i'},
 		{"output-to-directory", required_argument, 0, 'e'},
 		{"force", no_argument, 0, 'f'},
 		{"allow-existing", no_argument, 0, 'F'},
@@ -3468,6 +3470,10 @@ int main(int argc, char **argv) {
 			}
 			out_mbtiles = optarg;
 			break;
+		
+		case 'i':
+			in_memory = 1;
+			break;
 
 		case 'e':
 			if (out_mbtiles != NULL) {
@@ -3804,6 +3810,11 @@ int main(int argc, char **argv) {
 		exit(EXIT_ARGS);
 	}
 
+	if (in_memory && (out_mbtiles == NULL || !pmtiles_has_suffix(out_mbtiles))) {
+		fprintf(stderr, "%s: -i option can only be used when outputting pmtiles\n", argv[0]);
+		exit(EXIT_ARGS);
+	}
+
 	if (out_mbtiles != NULL) {
 		const char *temp_out_mbtiles = out_mbtiles;
 		if (force) {
@@ -3811,7 +3822,9 @@ int main(int argc, char **argv) {
 		} else {
 			if (pmtiles_has_suffix(out_mbtiles)) {
 				check_pmtiles(out_mbtiles, argv, forcetable);
-				temp_out_mbtiles = ":memory:";
+				if (in_memory) {
+					temp_out_mbtiles = ":memory:";
+				}
 			}
 		}
 
