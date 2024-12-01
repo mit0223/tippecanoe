@@ -855,7 +855,7 @@ struct write_tile_args {
 	std::vector<task *> *tasks;
 	char *global_stringpool = NULL;
 	int min_detail = 0;
-	sqlite3 *outdb = NULL;
+	mbtiles_db *mbdb = NULL;
 	const char *outdir = NULL;
 	int buffer = 0;
 	const char *fname = NULL;
@@ -1630,7 +1630,7 @@ void skip_tile(decompressor *geoms, std::atomic<long long> *geompos_in, bool com
 	}
 }
 
-long long write_tile(decompressor *geoms, std::atomic<long long> *geompos_in, char *global_stringpool, int z, const unsigned tx, const unsigned ty, const int detail, int min_detail, sqlite3 *outdb, const char *outdir, int buffer, const char *fname, compressor **geomfile, std::atomic<long long> *geompos, int minzoom, int maxzoom, double todo, std::atomic<long long> *along, long long alongminus, double gamma, int child_shards, long long *pool_off, unsigned *initial_x, unsigned *initial_y, std::atomic<int> *running, double simplification, std::vector<std::map<std::string, layermap_entry>> *layermaps, std::vector<std::vector<std::string>> *layer_unmaps, size_t tiling_seg, size_t pass, unsigned long long mingap, long long minextent, unsigned long long mindrop_sequence, const char *prefilter, const char *postfilter, json_object *filter, write_tile_args *arg, atomic_strategy *strategy_out, bool compressed_input, node *shared_nodes_map, size_t nodepos, std::string const &shared_nodes_bloom, std::vector<std::string> const &unidecode_data, long long estimated_complexity, std::set<zxy> &skip_children_out) {
+long long write_tile(decompressor *geoms, std::atomic<long long> *geompos_in, char *global_stringpool, int z, const unsigned tx, const unsigned ty, const int detail, int min_detail, mbtiles_db *mbdb, const char *outdir, int buffer, const char *fname, compressor **geomfile, std::atomic<long long> *geompos, int minzoom, int maxzoom, double todo, std::atomic<long long> *along, long long alongminus, double gamma, int child_shards, long long *pool_off, unsigned *initial_x, unsigned *initial_y, std::atomic<int> *running, double simplification, std::vector<std::map<std::string, layermap_entry>> *layermaps, std::vector<std::vector<std::string>> *layer_unmaps, size_t tiling_seg, size_t pass, unsigned long long mingap, long long minextent, unsigned long long mindrop_sequence, const char *prefilter, const char *postfilter, json_object *filter, write_tile_args *arg, atomic_strategy *strategy_out, bool compressed_input, node *shared_nodes_map, size_t nodepos, std::string const &shared_nodes_bloom, std::vector<std::string> const &unidecode_data, long long estimated_complexity, std::set<zxy> &skip_children_out) {
 	double merge_fraction = 1;
 	double mingap_fraction = 1;
 	double minextent_fraction = 1;
@@ -2813,8 +2813,8 @@ long long write_tile(decompressor *geoms, std::atomic<long long> *geompos_in, ch
 					exit(EXIT_IMPOSSIBLE);
 				}
 
-				if (outdb != NULL) {
-					mbtiles_write_tile(outdb, z, tx, ty, compressed.data(), compressed.size());
+				if (mbdb != NULL) {
+					mbtiles_write_tile(mbdb, z, tx, ty, compressed.data(), compressed.size());
 				} else if (outdir != NULL) {
 					dir_write_tile(outdir, z, tx, ty, compressed);
 				}
@@ -2840,7 +2840,6 @@ long long write_tile(decompressor *geoms, std::atomic<long long> *geompos_in, ch
 			return count;
 		}
 	}
-
 	fprintf(stderr, "could not make tile %d/%u/%u small enough\n", z, tx, ty);
 	return -1;
 }
@@ -2941,7 +2940,7 @@ exit(EXIT_IMPOSSIBLE);
 				len = 1;
 			} else {
 				arg->wrote_zoom = z;
-				len = write_tile(&dc, &geompos, arg->global_stringpool, z, x, y, z == arg->maxzoom ? arg->full_detail : arg->low_detail, arg->min_detail, arg->outdb, arg->outdir, arg->buffer, arg->fname, arg->geomfile, arg->geompos, arg->minzoom, arg->maxzoom, arg->todo, arg->along, geompos, arg->gamma, arg->child_shards, arg->pool_off, arg->initial_x, arg->initial_y, arg->running, arg->simplification, arg->layermaps, arg->layer_unmaps, arg->tiling_seg, arg->pass, arg->mingap, arg->minextent, arg->mindrop_sequence, arg->prefilter, arg->postfilter, arg->filter, arg, arg->strategy, arg->compressed, arg->shared_nodes_map, arg->nodepos, *(arg->shared_nodes_bloom), (*arg->unidecode_data), estimated_complexity, arg->skip_children_out);
+				len = write_tile(&dc, &geompos, arg->global_stringpool, z, x, y, z == arg->maxzoom ? arg->full_detail : arg->low_detail, arg->min_detail, arg->mbdb, arg->outdir, arg->buffer, arg->fname, arg->geomfile, arg->geompos, arg->minzoom, arg->maxzoom, arg->todo, arg->along, geompos, arg->gamma, arg->child_shards, arg->pool_off, arg->initial_x, arg->initial_y, arg->running, arg->simplification, arg->layermaps, arg->layer_unmaps, arg->tiling_seg, arg->pass, arg->mingap, arg->minextent, arg->mindrop_sequence, arg->prefilter, arg->postfilter, arg->filter, arg, arg->strategy, arg->compressed, arg->shared_nodes_map, arg->nodepos, *(arg->shared_nodes_bloom), (*arg->unidecode_data), estimated_complexity, arg->skip_children_out);
 			}
 
 			if (pthread_mutex_lock(&var_lock) != 0) {
@@ -3036,6 +3035,9 @@ int traverse_zooms(int *geomfd, off_t *geom_size, char *global_stringpool, std::
 	int z;
 	int largest_written = -1;
 
+	// attach mbtiles DB
+	mbtiles_db* mbdb = outdb != NULL? mbtiles_attach_db(outdb): NULL;
+
 	for (z = iz; z <= maxzoom; z++) {
 		std::atomic<long long> most(0);
 
@@ -3096,6 +3098,10 @@ int traverse_zooms(int *geomfd, off_t *geom_size, char *global_stringpool, std::
 		if (threads < 1) {
 			threads = 1;
 		}
+		if (!quiet) {
+			fprintf(stderr, "execute %lu threads\n", threads);
+		}
+
 
 		// Assign temporary files to threads
 
@@ -3142,7 +3148,7 @@ int traverse_zooms(int *geomfd, off_t *geom_size, char *global_stringpool, std::
 				args[thread].threadno = thread;
 				args[thread].global_stringpool = global_stringpool;
 				args[thread].min_detail = min_detail;
-				args[thread].outdb = outdb;  // locked with db_lock
+				args[thread].mbdb = mbdb;  // locked with db_lock
 				args[thread].outdir = outdir;
 				args[thread].buffer = buffer;
 				args[thread].fname = fname;
@@ -3279,8 +3285,16 @@ int traverse_zooms(int *geomfd, off_t *geom_size, char *global_stringpool, std::
 			strategies[z] = s;
 
 			if (again) {
-				if (outdb != NULL) {
-					mbtiles_erase_zoom(outdb, z);
+				if (mbdb != NULL) {
+					if (pthread_mutex_lock(&db_lock) != 0) {
+						perror("pthread_mutex_lock");
+						exit(EXIT_PTHREAD);
+					}
+					mbtiles_erase_zoom(mbdb, z);
+					if (pthread_mutex_unlock(&db_lock) != 0) {
+						perror("pthread_mutex_unlock");
+						exit(EXIT_PTHREAD);
+					}
 				} else if (outdir != NULL) {
 					dir_erase_zoom(outdir, z);
 				}
@@ -3319,7 +3333,9 @@ int traverse_zooms(int *geomfd, off_t *geom_size, char *global_stringpool, std::
 			return err;
 		}
 	}
-
+	if (mbdb != NULL) {
+		mbtiles_detach_db(mbdb);
+	}
 	if (largest_written >= 0 && maxzoom > largest_written) {
 		maxzoom = largest_written;
 	}

@@ -831,6 +831,9 @@ void dispatch_tasks(std::map<zxy, std::vector<std::string>> &tasks, std::vector<
 		}
 	}
 
+	// mbtiles DB for worker thread
+	mbtiles_db* mbdb = outdb != NULL? mbtiles_attach_db(outdb): NULL;
+
 	for (size_t i = 0; i < CPUS; i++) {
 		void *retval;
 
@@ -839,12 +842,16 @@ void dispatch_tasks(std::map<zxy, std::vector<std::string>> &tasks, std::vector<
 		}
 
 		for (auto ai = args[i].outputs.begin(); ai != args[i].outputs.end(); ++ai) {
-			if (outdb != NULL) {
-				mbtiles_write_tile(outdb, ai->first.z, ai->first.x, ai->first.y, ai->second.data(), ai->second.size());
+			if (mbdb != NULL) {
+				mbtiles_write_tile(mbdb, ai->first.z, ai->first.x, ai->first.y, ai->second.data(), ai->second.size());
 			} else if (outdir != NULL) {
 				dir_write_tile(outdir, ai->first.z, ai->first.x, ai->first.y, ai->second);
 			}
 		}
+	}
+
+	if (mbdb != NULL) {
+		mbtiles_detach_db(mbdb);
 	}
 }
 

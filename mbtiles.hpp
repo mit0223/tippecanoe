@@ -61,16 +61,33 @@ struct metadata {
 	std::string decisions_json;
 };
 
+class mbtiles_stmt {
+	sqlite3_stmt *stmt = NULL;
+public:
+	sqlite3_stmt * get(sqlite3 *outdb, const char *sql);	
+	~mbtiles_stmt();
+};
+
+class mbtiles_db {
+public:
+	sqlite3 *db = NULL;
+	mbtiles_stmt replace_image_stmt;
+	mbtiles_stmt insert_map_stmt;
+	mbtiles_stmt delete_map_stmt;
+	mbtiles_stmt delete_image_stmt;
+};
+
 #include "tile.hpp"
 
+mbtiles_db *mbtiles_attach_db(sqlite3 *db);
 sqlite3 *mbtiles_open(const char *dbname, char **argv, int forcetable);
 
-void mbtiles_write_tile(sqlite3 *outdb, int z, int tx, int ty, const char *data, int size);
-void mbtiles_erase_zoom(sqlite3 *outdb, int z);
+void mbtiles_write_tile(mbtiles_db *mbdb, int z, int tx, int ty, const char *data, int size);
+void mbtiles_erase_zoom(mbtiles_db *mbdb, int z);
 
 metadata make_metadata(const char *fname, int minzoom, int maxzoom, double minlat, double minlon, double maxlat, double maxlon, double minlat2, double minlon2, double maxlat2, double maxlon2, double midlat, double midlon, const char *attribution, std::map<std::string, layermap_entry> const &layermap, bool vector, const char *description, bool do_tilestats, std::map<std::string, std::string> const &attribute_descriptions, std::string const &program, std::string const &commandline, std::vector<strategy> const &strategies, int basezoom, double droprate, int retain_points_multiplier);
 void mbtiles_write_metadata(sqlite3 *db, const metadata &m, bool forcetable);
-
+sqlite3 *mbtiles_detach_db(mbtiles_db *mbdb);
 void mbtiles_close(sqlite3 *outdb, const char *pgm);
 
 std::map<std::string, layermap_entry> merge_layermaps(std::vector<std::map<std::string, layermap_entry> > const &maps);

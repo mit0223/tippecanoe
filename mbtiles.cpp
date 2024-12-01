@@ -26,6 +26,51 @@ size_t max_tilestats_attributes = 1000;
 size_t max_tilestats_sample_values = 1000;
 size_t max_tilestats_values = 100;
 
+sqlite3_stmt *mbtiles_stmt::get(sqlite3 *outdb, const char *sql) {
+	if (this->stmt == NULL) {
+		if (sqlite3_prepare_v3(outdb, sql, -1, SQLITE_PREPARE_PERSISTENT, &this->stmt, NULL) != SQLITE_OK) {
+			fprintf(stderr, "sqlite3 images prep failed\n");
+			exit(EXIT_SQLITE);
+		}
+	}
+	return this->stmt;
+}
+
+mbtiles_stmt::~mbtiles_stmt() {
+	if (this->stmt != NULL) {
+		if (sqlite3_finalize(this->stmt) != SQLITE_OK) {
+			fprintf(stderr, "sqlite3 images finalize failed: %s\n", sqlite3_errmsg(sqlite3_db_handle(this->stmt)));
+			exit(EXIT_SQLITE);
+		}
+	}
+}
+
+mbtiles_db *mbtiles_attach_db(sqlite3 *outdb) {
+	mbtiles_db *mbdb = new mbtiles_db();
+	if (mbdb == NULL) {
+		perror("Out of memory");
+		exit(EXIT_MEMORY);
+	}
+	char *err = NULL;
+	if (sqlite3_exec(outdb, "BEGIN TRANSACTION;", NULL, NULL, &err) != SQLITE_OK) {
+		fprintf(stderr, "sqlite3 fail to begin transaction: %s\n", err);
+		exit(EXIT_SQLITE);
+	}
+	mbdb->db = outdb;
+	return mbdb;
+}
+
+sqlite3 *mbtiles_detach_db(mbtiles_db *mbdb) {
+	sqlite3 *outdb = mbdb->db;
+	delete mbdb;
+	char *err = NULL;
+	if (sqlite3_exec(outdb, "COMMIT;", NULL, NULL, &err) != SQLITE_OK) {
+		fprintf(stderr, "sqlite3 fail to commit transaction: %s\n", err);
+		exit(EXIT_SQLITE);
+	}
+	return outdb;
+}
+
 sqlite3 *mbtiles_open(const char *dbname, char **argv, int forcetable) {
 	sqlite3 *outdb;
 
@@ -101,18 +146,15 @@ sqlite3 *mbtiles_open(const char *dbname, char **argv, int forcetable) {
 	return outdb;
 }
 
-void mbtiles_write_tile(sqlite3 *outdb, int z, int tx, int ty, const char *data, int size) {
+void mbtiles_write_tile(mbtiles_db *mbdb, int z, int tx, int ty, const char *data, int size) {
 	std::string hash = std::to_string(fnv1a(std::string(data, size)));
 
 	// following https://github.com/mapbox/node-mbtiles/blob/master/lib/mbtiles.js
 
 	sqlite3_stmt *stmt;
+	sqlite3 *outdb = mbdb->db;
 	const char *images = "replace into images (zoom_level, tile_id, tile_data) values (?, ?, ?)";
-	if (sqlite3_prepare_v2(outdb, images, -1, &stmt, NULL) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 images prep failed\n");
-		exit(EXIT_SQLITE);
-	}
-
+	stmt = mbdb->replace_image_stmt.get(outdb, images);
 	sqlite3_bind_int(stmt, 1, z);
 	sqlite3_bind_text(stmt, 2, hash.c_str(), hash.size(), NULL);
 	sqlite3_bind_blob(stmt, 3, data, size, NULL);
@@ -121,64 +163,60 @@ void mbtiles_write_tile(sqlite3 *outdb, int z, int tx, int ty, const char *data,
 		fprintf(stderr, "sqlite3 images insert failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
-	if (sqlite3_finalize(stmt) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 images finalize failed: %s\n", sqlite3_errmsg(outdb));
+	if (sqlite3_reset(stmt) != SQLITE_OK) {
+		fprintf(stderr, "sqlite3 images insert statement reset failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
 
 	const char *map = "insert into map (zoom_level, tile_column, tile_row, tile_id) values (?, ?, ?, ?)";
-	if (sqlite3_prepare_v2(outdb, map, -1, &stmt, NULL) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 map prep failed\n");
-		exit(EXIT_SQLITE);
-	}
+	stmt = mbdb->insert_map_stmt.get(outdb, map);
 
 	sqlite3_bind_int(stmt, 1, z);
 	sqlite3_bind_int(stmt, 2, tx);
 	sqlite3_bind_int(stmt, 3, (1 << z) - 1 - ty);
 	sqlite3_bind_text(stmt, 4, hash.c_str(), hash.size(), NULL);
+	// pthread_t thread_id = pthread_self();
+	// fprintf(stderr, "sqlite3 map insert thread_id=%lu zoom_level=%d, tile_column=%d tile_row=%d\n", thread_id, z, tx,  (1 << z) - 1 - ty);
 
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
 		fprintf(stderr, "sqlite3 map insert failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
-	if (sqlite3_finalize(stmt) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 finalize failed: %s\n", sqlite3_errmsg(outdb));
+	if (sqlite3_reset(stmt) != SQLITE_OK) {
+		fprintf(stderr, "sqlite3 map insert statement reset failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
 }
 
-void mbtiles_erase_zoom(sqlite3 *outdb, int z) {
+void mbtiles_erase_zoom(mbtiles_db *mbdb, int z) {
+	sqlite3 *outdb = mbdb->db;
 	sqlite3_stmt *stmt;
 
 	const char *query = "delete from map where zoom_level = ?";
-	if (sqlite3_prepare_v2(outdb, query, -1, &stmt, NULL) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 delete map prep failed\n");
-		exit(EXIT_SQLITE);
-	}
+	stmt = mbdb->delete_map_stmt.get(outdb, query);
 
 	sqlite3_bind_int(stmt, 1, z);
+	// pthread_t thread_id = pthread_self();
+	// fprintf(stderr, "sqlite3 map delete thread_id=%lu zoom_level=%d\n", thread_id, z);
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
 		fprintf(stderr, "sqlite3 delete map failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
-	if (sqlite3_finalize(stmt) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 delete map finalize failed: %s\n", sqlite3_errmsg(outdb));
+	if (sqlite3_reset(stmt) != SQLITE_OK) {
+		fprintf(stderr, "sqlite3 delete map statement reset failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
 
 	query = "delete from images where zoom_level = ?";
-	if (sqlite3_prepare_v2(outdb, query, -1, &stmt, NULL) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 delete images prep failed\n");
-		exit(EXIT_SQLITE);
-	}
+	stmt = mbdb->delete_image_stmt.get(outdb, query);
 
 	sqlite3_bind_int(stmt, 1, z);
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
 		fprintf(stderr, "sqlite3 delete images failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
-	if (sqlite3_finalize(stmt) != SQLITE_OK) {
-		fprintf(stderr, "sqlite3 delete images finalize failed: %s\n", sqlite3_errmsg(outdb));
+	if (sqlite3_reset(stmt) != SQLITE_OK) {
+		fprintf(stderr, "sqlite3 delete images statement reset failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
 	}
 }
