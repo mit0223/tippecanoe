@@ -3098,10 +3098,6 @@ int traverse_zooms(int *geomfd, off_t *geom_size, char *global_stringpool, std::
 		if (threads < 1) {
 			threads = 1;
 		}
-		if (!quiet) {
-			fprintf(stderr, "execute %lu threads\n", threads);
-		}
-
 
 		// Assign temporary files to threads
 

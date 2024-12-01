@@ -175,8 +175,6 @@ void mbtiles_write_tile(mbtiles_db *mbdb, int z, int tx, int ty, const char *dat
 	sqlite3_bind_int(stmt, 2, tx);
 	sqlite3_bind_int(stmt, 3, (1 << z) - 1 - ty);
 	sqlite3_bind_text(stmt, 4, hash.c_str(), hash.size(), NULL);
-	// pthread_t thread_id = pthread_self();
-	// fprintf(stderr, "sqlite3 map insert thread_id=%lu zoom_level=%d, tile_column=%d tile_row=%d\n", thread_id, z, tx,  (1 << z) - 1 - ty);
 
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
 		fprintf(stderr, "sqlite3 map insert failed: %s\n", sqlite3_errmsg(outdb));
@@ -196,8 +194,6 @@ void mbtiles_erase_zoom(mbtiles_db *mbdb, int z) {
 	stmt = mbdb->delete_map_stmt.get(outdb, query);
 
 	sqlite3_bind_int(stmt, 1, z);
-	// pthread_t thread_id = pthread_self();
-	// fprintf(stderr, "sqlite3 map delete thread_id=%lu zoom_level=%d\n", thread_id, z);
 	if (sqlite3_step(stmt) != SQLITE_DONE) {
 		fprintf(stderr, "sqlite3 delete map failed: %s\n", sqlite3_errmsg(outdb));
 		exit(EXIT_SQLITE);
